@@ -32,18 +32,23 @@ int stop_check = 0;
 // from cho
 
 AccelStepper stepperX(AccelStepper::DRIVER, 2, 5); // Step and Direction pins for X
-AccelStepper stepperY(AccelStepper::DRIVER, 3, 6); // Step and Direction pins for Y
-Servo myServo;
+AccelStepper steppery2(AccelStepper::DRIVER, 3, 6); // Step and Direction pins for Y
+AccelStepper stepperz(AccelStepper::DRIVER, 4, 7); // Step and Direction pins for Y
+// Servo myServo;
 
 // Define limit switch pins
 const int xLimitPin = 9; // X+ Endstop on CNC shield connected to pin 9
 const int yLimitPin = 10; // Y+ Endstop on CNC shield connected to pin 10
-const int servoPin = 11;  // Servo control pin
+const int zLimitPin = 11; // Y+ Endstop on CNC shield connected to pin 
+// const int servoPin = 11;  // Servo control pin
 
 volatile bool xLimitTriggered = false;
 volatile bool yLimitTriggered = false;
 unsigned long xLimitTriggerTime = 0;
 unsigned long yLimitTriggerTime = 0;
+
+volatile bool zLimitTriggered = false;
+unsigned long zLimitTriggerTime = 0;
 
 void xLimitISR() {
   xLimitTriggered = true;
@@ -55,28 +60,58 @@ void yLimitISR() {
   yLimitTriggerTime = millis(); // Record the time when the limit switch is triggered
 }
 
+void zLimitISR() {
+  zLimitTriggered = true;
+  zLimitTriggerTime = millis(); // Record the time when the limit switch is triggered
+}
+
 // ---------------- Movement Function---------------------------------------------------------------------
 void move_x(float moveDistance)
 {
   // Serial.println("hi");
   stepperX.moveTo(moveDistance); // change the move distance by your desire
+  while (stepperX.distanceToGo() != 0) {
+      stepperX.run();
+      delay(1);
+  }
 
+  // delay(5000);
   String finishMessage = "finish move to " + String(moveDistance);
   Serial.println(finishMessage);
   client.publish("teleprint/status/step_x", finishMessage.c_str());
   state_x = stop;
 }
 
+void move_y2(float moveDistance)
+{
+  // Serial.println("hi");
+  steppery2.moveTo(moveDistance); // change the move distance by your desire
+  while (steppery2.distanceToGo() != 0) {
+      steppery2.run();
+      delay(1);
+  }
+
+  String finishMessage = "finish move to " + String(moveDistance);
+  Serial.println(finishMessage);
+  client.publish("teleprint/status/step_y2", finishMessage.c_str());
+  // state_z = stop;
+}
+
 void move_z(float moveDistance)
 {
   // Serial.println("hi");
-  stepperY.moveTo(moveDistance); // change the move distance by your desire
+  stepperz.moveTo(moveDistance); // change the move distance by your desire
+  while (stepperz.distanceToGo() != 0) {
+      stepperz.run();
+      delay(1);
+  }
 
   String finishMessage = "finish move to " + String(moveDistance);
   Serial.println(finishMessage);
   client.publish("teleprint/status/step_z", finishMessage.c_str());
-  state_z = stop;
+  // state_z = stop;
 }
+
 
 void stop_move(int motor_num)
 {
@@ -90,21 +125,71 @@ void stop_move(int motor_num)
   }
   else if (motor_num == 2)
   {
-    stepperY.stop();
+    steppery2.stop();
 
-    String finishMessage = "finish stop the motorZ";
+    String finishMessage = "finish stop the motory2";
     Serial.println(finishMessage);
-    client.publish("teleprint/status/step_z", finishMessage.c_str());
+    client.publish("teleprint/status/step_y2", finishMessage.c_str());
   }
   else if (motor_num == 3)
   {
     stepperX.stop();
-    stepperY.stop();
+    steppery2.stop();
 
     String finishMessage = "finish stop both motor";
     Serial.println(finishMessage);
-    client.publish("teleprint/status/step_z", finishMessage.c_str());
+    client.publish("teleprint/status/step_x", finishMessage.c_str());
+    client.publish("teleprint/status/step_y2", finishMessage.c_str());
   }
+}
+
+void set_home()
+{
+  xLimitTriggered = false;
+  yLimitTriggered = false;
+  zLimitTriggered = false;
+
+  stepperX.moveTo(-1000000);
+  while (!xLimitTriggered) {
+    stepperX.run();
+    delay(1); // Small delay to avoid flooding the Serial Monitor
+
+    // Check if limit switch is triggered during movement
+    if (digitalRead(xLimitPin) == LOW) {
+      stepperX.stop();
+      xLimitTriggered = true;
+      stepperX.setCurrentPosition(0); // Reset the position
+      break;
+    }
+  }
+
+  steppery2.moveTo(-1000000);
+  while (!yLimitTriggered) {
+    steppery2.run();
+    delay(1); // Small delay to avoid flooding the Serial Monitor
+
+    // Check if limit switch is triggered during movement
+    if (digitalRead(yLimitPin) == LOW) {
+      steppery2.stop();
+      yLimitTriggered = true;
+      steppery2.setCurrentPosition(0); // Reset the position
+      break;
+    }
+  }
+  stepperz.moveTo(-1000000);
+  while (!zLimitTriggered) {
+    stepperz.run();
+    delay(1); // Small delay to avoid flooding the Serial Monitor
+
+    // Check if limit switch is triggered during movement
+    if (digitalRead(zLimitPin) == LOW) {
+      stepperz.stop();
+      zLimitTriggered = true;
+      stepperz.setCurrentPosition(0); // Reset the position
+      break;
+    }
+  }
+
 }
 
 // --------------------------------------------------------------------------------------------------------
@@ -156,12 +241,27 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     move_x(moveDistance);
   }
 
-  if (String(topic) == "teleprint/cmd/step_z" && state_z != moving) {
+  if (String(topic) == "teleprint/cmd/step_y2") {
     // Convert message to float
     float moveDistance = message.toFloat();
 
-    // Create a reply message
-    String reply = "move in Z-axis " + String(moveDistance) + " mm";
+    // Create a reply messagye
+    String reply = "move in y2-axis " + String(moveDistance) + " mm";
+    Serial.println(reply);
+
+    // Publish the reply to the same topic
+    client.publish("teleprint/status/step_y2", reply.c_str());
+    state_z = moving;
+    lastMessage = message;
+    move_y2(moveDistance);
+  }
+
+  if (String(topic) == "teleprint/cmd/step_z") {
+    // Convert message to float
+    float moveDistance = message.toFloat();
+
+    // Create a reply messagye
+    String reply = "move in z-axis " + String(moveDistance) + " mm";
     Serial.println(reply);
 
     // Publish the reply to the same topic
@@ -188,17 +288,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     else if (in_msg == "StepZEnd")
     {
       stop_check = 2;
-        String reply = "Stop the movement on motor Z";
+      String reply = "Stop the movement on motor y2";
       Serial.println(reply);
-      client.publish("teleprint/status/step_Z", reply.c_str());
+      client.publish("teleprint/status/step_y2", reply.c_str());
     }
     else if (in_msg == "StepXZEnd")
     {
       stop_check = 3;
-      String reply = "Stop the movement on motor x and Z";
+      String reply = "Stop the movement on motor X and y2";
       Serial.println(reply);
       client.publish("teleprint/status/step_X", reply.c_str());
-      client.publish("teleprint/status/step_Z", reply.c_str());
+      client.publish("teleprint/status/step_y2", reply.c_str());
     }
 
 
@@ -216,9 +316,12 @@ void setup() {
   Serial3.begin(115200);
   WiFi.init(Serial3);
 
+  pinMode(xLimitPin, INPUT_PULLUP);
+  pinMode(yLimitPin, INPUT_PULLUP);
+  pinMode(zLimitPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(xLimitPin), xLimitISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(yLimitPin), yLimitISR, FALLING);
-
+  attachInterrupt(digitalPinToInterrupt(zLimitPin), yLimitISR, FALLING);
 
 
   // Define the servo motor
@@ -226,18 +329,20 @@ void setup() {
   stepperX.setMaxSpeed(1000);
   stepperX.setAcceleration(500);
 
-  stepperY.setMaxSpeed(1000);
-  stepperY.setAcceleration(500);
+  steppery2.setMaxSpeed(1000);
+  steppery2.setAcceleration(500);
 
-  myServo.attach(servoPin);
+  stepperz.setMaxSpeed(2000);
+  stepperz.setAcceleration(1000);
+
+  // myServo.attach(servoPin);
 
     // Move servo to initial position
-  myServo.write(90);
+  // myServo.write(90);
 
   Serial.println("Setup complete.");
 
-pinMode(xLimitPin, INPUT_PULLUP);
-pinMode(yLimitPin, INPUT_PULLUP);
+
 
 
   // Check for the WiFi module
@@ -307,7 +412,18 @@ void connectToMQTT() {
       Serial.println("connected");
       // Subscribe to the necessary topics
       client.subscribe("teleprint/status/init");
+
       client.subscribe("teleprint/cmd/step_x");  // Subscribe to the new topic
+
+      client.subscribe("teleprint/cmd/step_y2");  // Subscribe to the new topic
+
+      client.subscribe("teleprint/cmd/step_z");  // Subscribe to the new topic
+
+     client.subscribe("teleprint/cmd/stepend");  // Subscribe to the new topic
+
+      // client.subscribe("teleprint/cmd/step_z");  // Subscribe to the new topic
+      // client.subscribe("teleprint/cmd/step_z");  // Subscribe to the new topic
+      set_home();
       // Publish initial message
       client.publish("teleprint/status/init", "controller init");
     } else {
