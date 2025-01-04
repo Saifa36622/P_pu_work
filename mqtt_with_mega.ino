@@ -2,7 +2,7 @@
 #include <PubSubClient.h>
 #include <AccelStepper.h>
 #include <Servo.h>
-// #include "HX711.h"
+#include "HX711.h"
 /* 
 topic avaible 
 
@@ -484,8 +484,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       move_z(1800);
       move_x(30000);
       reply = "Finish task a";
+      set_home();
     }
-    if (message == "b")
+    else if (message == "b")
     {
       move_y2(11750);
       move_z(4000);
@@ -493,10 +494,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       move_z(1650);
       move_x(30000);
       reply = "Finish task b";
+      set_home();
+    }
+    else if (message == "home")
+    {
+      reply = "Finish set home";
+      set_home();
     }
 
-    set_home();
-    
     Serial.println(reply);
 
     // Publish the reply to the same topic
